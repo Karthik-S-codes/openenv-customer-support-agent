@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "customer-support-agent-openenv"
+version = "0.1.0"
+description = "OpenEnv customer support agent environment with easy/medium/hard tasks"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "openenv-core",
+  "fastapi",
+  "uvicorn",
+  "openai",
+]
+
+[project.scripts]
+server = "server.app:main"
+
+[tool.setuptools]
+py-modules = ["models", "inference"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["server*", "tasks*"]

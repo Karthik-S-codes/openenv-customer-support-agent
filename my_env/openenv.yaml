@@ -1,0 +1,17 @@
+name: customer_support_agent
+description: Multi-step customer support environment for refund, delivery delay, and payment issues.
+entrypoint:
+  module: server.your_environment
+  class: CustomerSupportEnvironment
+inference:
+  path: inference.py
+tasks:
+  - name: easy
+    description: Classification-only evaluation.
+    grader: tasks.easy:grader
+  - name: medium
+    description: Classification and response quality evaluation.
+    grader: tasks.medium:grader
+  - name: hard
+    description: Full multi-step resolution evaluation.
+    grader: tasks.hard:grader
