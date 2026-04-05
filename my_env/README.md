@@ -31,8 +31,9 @@ The environment state includes:
 - `phase` (`classify_issue`, `generate_response`, `resolve_issue`, `completed`)
 - `customer_query`
 - `done`
+- `progress` (`completed_steps`, `total_steps`, `completion_ratio`)
 - `history`
-- `summary` (correctness flags and cumulative reward)
+- `summary` (correct/partial flags and cumulative reward)
 
 Typed model: `Observation` in `models.py`.
 
@@ -50,8 +51,19 @@ Typed model: `Action` in `models.py`.
 
 Per-step reward rules:
 
-- Positive reward for correct actions (`+0.4`, `+0.4`, `+0.2`, weighted by scenario)
-- Negative reward for wrong actions (`-0.2`)
+- Classification:
+	- correct: `+0.4`
+	- wrong: `-0.2`
+- Response:
+	- correct: `+0.4`
+	- partial: `+0.2`
+	- wrong: `-0.2`
+- Resolution:
+	- correct: `+0.2`
+	- partial: `+0.1`
+	- wrong: `-0.2`
+
+Invalid or missing action keys return a negative reward and an explicit error message.
 
 Typed model: `Reward` in `models.py`.
 
@@ -60,8 +72,8 @@ Typed model: `Reward` in `models.py`.
 Three grader tasks are provided:
 
 1. `easy`: classification only (score `1.0` or `0.0`)
-2. `medium`: classification + response (`0.5 + 0.5`)
-3. `hard`: classification + response + resolution (`0.4 + 0.4 + 0.2`)
+2. `medium`: classification + response (`0.5 + 0.5`, with `0.25` for partial response)
+3. `hard`: classification + response + resolution (`0.4 + 0.4 + 0.2`, with partial credits)
 
 Task files are under `tasks/`.
 
@@ -114,22 +126,34 @@ python inference.py --agent openai
 Run local API:
 
 ```bash
-cd server
-uvicorn app:app --host 0.0.0.0 --port 8000
+uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 
 Available endpoints:
 
+- `GET /`
 - `POST /reset`
 - `POST /step`
 - `GET /state`
+- `GET /docs`
 
 ## Docker
 
 ```bash
 docker build -t customer-support-env .
-docker run --rm -p 8000:8000 customer-support-env
+docker run --rm -p 7860:7860 customer-support-env
 ```
+
+## Deployment
+
+```bash
+openenv push -r Karthis7482/customer-support-env
+```
+
+Deployed Space:
+
+- Space page: `https://huggingface.co/spaces/Karthis7482/customer-support-env`
+- Live API: `https://karthis7482-customer-support-env.hf.space`
 
 ## Baseline Scores
 
@@ -138,4 +162,4 @@ Sample hard-task baseline (rule-based):
 - Step rewards: `0.40, 0.40, 0.20`
 - Final result: success `true`
 
-Scores are task-dependent and remain in `0.0-1.0` range through graders.
+Scores are task-dependent, non-constant, and remain in `0.0-1.0` range through graders.
