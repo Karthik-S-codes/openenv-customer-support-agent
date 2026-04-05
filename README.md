@@ -1,73 +1,188 @@
 # OpenEnv Customer Support Agent
 
-Round 1 OpenEnv submission for a multi-step Customer Support Agent environment.
+Production-style OpenEnv environment for customer support automation.
 
-The environment simulates real support workflows across three issue types:
+## 1. Project Overview
 
-- Refund
-- Delivery delay
-- Payment failure
+This project simulates a realistic customer support workflow where an agent must handle user issues across multiple phases and return high-quality actions under constrained labels.
 
-Each episode follows three phases:
+Supported issue families:
 
-1. Classify issue
-2. Generate response
-3. Resolve issue
+- refund
+- delivery
+- payment
 
-## Submission Links
+Episode flow:
 
-- GitHub Repository: https://github.com/Karthik-S-codes/openenv-customer-support-agent
-- Hugging Face Space: https://huggingface.co/spaces/Karthis7482/customer-support-env
-- Live Runtime URL: https://karthis7482-customer-support-env.hf.space
+1. classify_issue
+2. generate_response
+3. resolve_issue
+4. completed
 
-## Repository Structure
+## 2. Problem Description
 
-Main implementation lives in the my_env folder.
+Customer support tickets often include emotion, urgency, and mixed signals (for example payment plus delivery concerns in one message). The goal is to train/evaluate an agent that can:
 
-- my_env/openenv.yaml: OpenEnv config and task wiring
-- my_env/inference.py: baseline inference runner
-- my_env/server/your_environment.py: environment logic
-- my_env/server/app.py: FastAPI endpoints
-- my_env/tasks/easy.py: easy grader
-- my_env/tasks/medium.py: medium grader
-- my_env/tasks/hard.py: hard grader
-- my_env/Dockerfile: deployment container
+- classify issue type correctly
+- generate a relevant response
+- choose a practical resolution outcome
 
-## API Endpoints
+while receiving meaningful per-step feedback and a final normalized task score.
 
-- GET /
-- POST /reset
-- GET /state
-- POST /step
-- GET /docs
+## 3. Environment Design
 
-## Local Run
+Core environment file:
+
+- my_env/server/your_environment.py
+
+Design highlights:
+
+- realistic query pool with order IDs, urgency, frustration, and mixed-condition phrasing
+- randomized query selection on reset
+- strict phase progression with no premature completion
+- explicit error handling for invalid/missing action keys
+- episode history tracking for auditability
+
+## 4. Observation and Action Spaces
+
+Observation fields include:
+
+- env_name
+- step_index
+- phase
+- customer_query
+- done
+- previous_actions
+- progress (completed_steps, total_steps, completion_ratio)
+- history (step-wise action/reward/error)
+- summary (correctness, partial correctness, wrong_steps, total_reward)
+
+Action interface by phase:
+
+- classify_issue: issue_type or classification
+- generate_response: response
+- resolve_issue: resolution
+
+## 5. Reward System
+
+Per-step reward shaping:
+
+- Classification:
+	- correct: +0.4
+	- close/related: +0.2
+	- wrong: -0.2
+- Response:
+	- correct and label-aligned: +0.4
+	- generic but acceptable / partial: +0.2
+	- wrong: -0.2
+- Resolution:
+	- correct: +0.2
+	- partial: +0.1
+	- wrong: -0.2
+
+Error handling:
+
+- missing required keys -> negative reward and structured error string
+- invalid action type -> negative reward and structured error string
+
+## 6. Task Definitions
+
+Task files:
+
+- my_env/tasks/easy.py
+- my_env/tasks/medium.py
+- my_env/tasks/hard.py
+
+Scoring is always bounded to [0.0, 1.0].
+
+Easy:
+
+- classification only
+- score = 1.0 if correct else 0.0
+
+Medium:
+
+- classification + response
+- weights: 0.5 + 0.5
+- classification is checked against the scenario expected issue type
+- partial correctness gives partial credit through domain-aware token rules
+
+Hard:
+
+- classification + response + resolution
+- weights: 0.4 + 0.4 + 0.2
+- classification is checked against the scenario expected issue type
+- partial correctness gives partial credit through domain-aware token rules
+
+## 7. Example Interaction Flow
+
+Sample episode (refund case):
+
+1. Reset:
+	- query: "My order #4821 arrived damaged and I want a refund immediately."
+	- phase: classify_issue
+2. Step 1 action:
+	- `{ "issue_type": "refund" }`
+	- reward: `+0.4`
+	- next phase: generate_response
+3. Step 2 action:
+	- `{ "response": "refund_policy" }`
+	- reward: `+0.4`
+	- next phase: resolve_issue
+4. Step 3 action:
+	- `{ "resolution": "refund_processed" }`
+	- reward: `+0.2` (plus bonus when no mistakes)
+	- done: true
+
+## 8. Run Locally
 
 From repository root:
 
-1. cd my_env
-2. openenv validate
-3. python inference.py --agent rule_based
-4. uvicorn server.app:app --host 0.0.0.0 --port 8000
+```powershell
+cd my_env
+openenv validate
+python inference.py --agent rule_based --task hard --max-steps 6
+python -m uvicorn server.app:app --host 0.0.0.0 --port 8000
+```
 
-## Deployment
+Local API and docs:
 
-1. cd my_env
-2. openenv validate
-3. openenv push -r Karthis7482/customer-support-env
+- http://localhost:8000/state
+- http://localhost:8000/docs
 
-## Deployment Verification
+## 9. Deployment Details
 
-After deployment, verify:
+Deploy target:
 
-- Space page opens and shows Running status
-- /docs loads successfully
-- POST /reset returns state JSON
-- POST /step progresses episode state and reward
+- Hugging Face Space: https://huggingface.co/spaces/Karthis7482/customer-support-env
+- Live runtime URL: https://karthis7482-customer-support-env.hf.space
 
-## Notes
+Deploy command:
 
-- Inference uses OpenAI client pattern with environment variables:
-	API_BASE_URL, MODEL_NAME, HF_TOKEN
-- Default values are set only for API_BASE_URL and MODEL_NAME
-- HF_TOKEN is never hardcoded
+```powershell
+cd my_env
+openenv validate
+openenv push -r Karthis7482/customer-support-env
+```
+
+Post-deploy checks:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "https://karthis7482-customer-support-env.hf.space/state"
+Invoke-RestMethod -Method Post -Uri "https://karthis7482-customer-support-env.hf.space/reset" -ContentType "application/json" -Body "{}"
+```
+
+## Resource and Compatibility Notes
+
+- inference.py remains compatible and unchanged in interface
+- openenv validate passes
+- Docker image builds and runs on low-resource setup (2 CPU, 8 GB RAM)
+
+## Why This Environment Is Useful
+
+This benchmark is useful for evaluating practical agent capabilities beyond one-shot classification:
+
+- multi-step reasoning under strict phase constraints
+- handling ambiguous, emotional, and mixed customer issues
+- balancing correctness, partial correctness, and robustness penalties
+- producing measurable signals for RL-style optimization and agent comparison
