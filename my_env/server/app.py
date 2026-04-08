@@ -39,10 +39,15 @@ class StepResponse(BaseModel):
     error: Optional[str] = None
 
 
+from typing import Optional
+from fastapi import Body
+
 @app.post("/reset")
-def reset_environment(request: ResetRequest) -> Dict[str, Any]:
-    state = env.reset(issue_type=request.issue_type)
-    return {"state": state.model_dump()}
+def reset(issue_type: Optional[str] = Body(default=None)):
+    obs = env.reset(issue_type=issue_type)
+    if hasattr(obs, "model_dump"):
+        return obs.model_dump()
+    return obs
 
 
 @app.get("/state")
