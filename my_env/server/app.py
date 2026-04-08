@@ -15,16 +15,13 @@ except ImportError:
     from models import Action, Observation, Reward
 
 
-app = FastAPI(title="Customer Support Agent Environment")
+app = FastAPI(title="Customer Support Agent Environment", root_path="/web")
 env = CustomerSupportEnvironment()
 
 
 @app.get("/")
 def root() -> Dict[str, Any]:
-    return {
-        "message": "Customer Support Agent Environment is running",
-        "endpoints": ["/reset", "/step", "/state", "/docs"],
-    }
+    return {"env": "customer_support_agent", "status": "ok"}
 
 
 class ResetRequest(BaseModel):
