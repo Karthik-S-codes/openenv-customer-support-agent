@@ -87,7 +87,7 @@ def _fallback_flags(episode: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
-def grade(episode: Dict[str, Any]) -> float:
+def grader(episode: Dict[str, Any]) -> float:
     flags = _fallback_flags(episode)
 
     classification_correct = bool(episode.get("classification_correct", flags["classification_correct"]))

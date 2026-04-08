@@ -1,4 +1,5 @@
 import random
+from models import Observation, Reward
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -358,7 +359,7 @@ class CustomerSupportEnvironment:
 
     def episode_result(self) -> Dict[str, Any]:
         return {
-            "expected_issue_type": self.current_scenario.get("issue_type"),
+            
             "related_issue_types": self.current_scenario.get("related_issue_types", []),
             "classification_correct": self.classification_correct,
             "classification_partial": self.classification_partial,

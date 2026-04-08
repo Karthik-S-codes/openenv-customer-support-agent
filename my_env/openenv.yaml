@@ -8,10 +8,10 @@ inference:
 tasks:
   - name: easy
     description: Classification-only evaluation.
-    grader: tasks.easy:grade
+    grader: tasks.easy:grader
   - name: medium
     description: Classification and response quality evaluation.
-    grader: tasks.medium:grade
+    grader: tasks.medium:grader
   - name: hard
     description: Full multi-step resolution evaluation.
-    grader: tasks.hard:grade
+    grader: tasks.hard:grader
