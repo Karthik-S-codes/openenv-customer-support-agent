@@ -5,25 +5,27 @@ from pydantic import BaseModel, Field
 
 
 class Observation(BaseModel):
-	env_name: str
-	step_index: int
-	phase: str
-	customer_query: Optional[str] = None
-	done: bool
-	history: List[Dict[str, Any]] = Field(default_factory=list)
-	summary: Dict[str, Any] = Field(default_factory=dict)
+    env_name: str
+    step_index: int
+    phase: str
+    customer_query: Optional[str] = None
+    done: bool
+    previous_actions: List[Any] = Field(default_factory=list)
+    progress: Dict[str, Any] = Field(default_factory=dict)
+    history: List[Dict[str, Any]] = Field(default_factory=list)
+    summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 class Action(BaseModel):
-	issue_type: Optional[str] = None
-	classification: Optional[str] = None
-	response: Optional[str] = None
-	resolution: Optional[str] = None
-	action: Optional[str] = None
+    issue_type: Optional[str] = None
+    classification: Optional[str] = None
+    response: Optional[str] = None
+    resolution: Optional[str] = None
+    action: Optional[str] = None
 
 
 class Reward(BaseModel):
-	value: float
+    value: float
 
 
 @dataclass

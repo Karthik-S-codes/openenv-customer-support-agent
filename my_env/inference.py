@@ -55,21 +55,13 @@ class SupportPolicy:
 				self.client = OpenAI()
 
 	def _fallback_action(self, state: Dict[str, Any]) -> Dict[str, str]:
-		query = (state.get("customer_query") or "").lower()
 		phase = state.get("phase")
 
-		if "refund" in query:
-			issue, response, resolution = "refund", "refund_policy", "refund_processed"
-		elif "delay" in query or "delayed" in query or "arrive" in query:
-			issue, response, resolution = "delivery", "delivery_update", "delivery_escalated"
-		else:
-			issue, response, resolution = "payment", "payment_verification", "payment_reconciled"
-
 		if phase == "classify_issue":
-			return {"issue_type": issue}
+			return {"issue_type": "refund"}
 		if phase == "generate_response":
-			return {"response": response}
-		return {"resolution": resolution}
+			return {"response": "refund_policy"}
+		return {"resolution": "refund_processed"}
 
 	def _model_action(self, state: Dict[str, Any]) -> Dict[str, str]:
 		if not self.client:
@@ -138,17 +130,18 @@ def run(task_name: str, env_name: str, model_name: str, agent_type: str, max_ste
 	log_start(task=task_name, env=env_name, model=model_name)
 
 	try:
-		state = env.reset()
+		state = env.reset().model_dump()
 
 		for step in range(1, max_steps + 1):
 			action_dict = policy.action(state)
 			action_text = json.dumps(action_dict, separators=(",", ":"))
 
-			state, reward, done, error = env.step(action_dict)
-			rewards.append(float(reward))
+			state_obj, reward, done, error = env.step(action_dict)
+			state = state_obj.model_dump()
+			rewards.append(float(reward.value))
 			steps_taken = step
 
-			log_step(step=step, action=action_text, reward=float(reward), done=bool(done), error=error)
+			log_step(step=step, action=action_text, reward=float(reward.value), done=bool(done), error=error)
 
 			if done:
 				break

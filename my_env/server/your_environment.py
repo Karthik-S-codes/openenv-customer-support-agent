@@ -1,6 +1,10 @@
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from ..models import Observation, Reward
+except ImportError:
+    from models import Observation, Reward
 
 class CustomerSupportEnvironment:
     """A 3-step customer support environment.
@@ -110,7 +114,7 @@ class CustomerSupportEnvironment:
         self.history: List[Dict[str, Any]] = []
         self.wrong_action_counts: Dict[str, int] = {}
 
-    def reset(self, issue_type: Optional[str] = None) -> Dict[str, Any]:
+    def reset(self, issue_type: Optional[str] = None) -> Observation:
         if issue_type and issue_type in self.VALID_ISSUES:
             candidates = [s for s in self._scenarios if s["issue_type"] == issue_type]
             self.current_scenario = self._rng.choice(candidates) if candidates else self._rng.choice(self._scenarios)
@@ -227,9 +231,9 @@ class CustomerSupportEnvironment:
         }
         return phase_map.get(step_index, "completed")
 
-    def step(self, action: Any) -> Tuple[Dict[str, Any], float, bool, Optional[str]]:
+    def step(self, action: Any) -> Tuple[Observation, Reward, bool, Optional[str]]:
         if self.done:
-            return self.state(), -0.2, True, "episode_finished"
+            return self.state(), Reward(value=-0.2), True, "episode_finished"
 
         required = ("issue_type", "classification") if self.current_step == 0 else ("response",) if self.current_step == 1 else ("resolution",)
         validation_error = self._validate_action(action, required)
@@ -240,7 +244,7 @@ class CustomerSupportEnvironment:
             reward = self._apply_repeated_wrong_penalty(action_value, -0.2)
             reward = round(reward, 2)
             self._record_step(action=action, reward=reward, error=validation_error)
-            return self.state(), reward, self.done, validation_error
+            return self.state(), Reward(value=reward), self.done, validation_error
 
         # Use phase-specific key first, then fallback.
         if isinstance(action, dict):
@@ -322,15 +326,14 @@ class CustomerSupportEnvironment:
 
         reward = round(reward, 2)
         self._record_step(action=action, reward=reward, error=error)
-        return self.state(), reward, self.done, error
+        return self.state(), Reward(value=reward), self.done, error
 
-    def state(self) -> Dict[str, Any]:
-        return {
+    def state(self) -> Observation:
+        return Observation(**{
             "env_name": self.ENV_NAME,
             "step_index": self.current_step,
             "phase": self._phase_name(self.current_step),
             "customer_query": self.current_query,
-            "expected_issue_type": self.current_scenario.get("issue_type"),
             "done": self.done,
             "previous_actions": [h.get("action") for h in self.history],
             "progress": {
@@ -351,7 +354,7 @@ class CustomerSupportEnvironment:
                 "bonus_awarded": self.bonus_awarded,
                 "total_reward": round(self.total_reward, 2),
             },
-        }
+        })
 
     def episode_result(self) -> Dict[str, Any]:
         return {

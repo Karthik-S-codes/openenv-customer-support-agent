@@ -45,20 +45,20 @@ class StepResponse(BaseModel):
 @app.post("/reset")
 def reset_environment(request: ResetRequest) -> Dict[str, Any]:
     state = env.reset(issue_type=request.issue_type)
-    return {"state": state}
+    return {"state": state.model_dump()}
 
 
 @app.get("/state")
 def get_state() -> Dict[str, Any]:
-    return {"state": env.state()}
+    return {"state": env.state().model_dump()}
 
 
 @app.post("/step")
 def step_environment(request: StepRequest) -> StepResponse:
     state, reward, done, error = env.step(request.action.model_dump(exclude_none=True))
     return {
-        "state": Observation(**state),
-        "reward": Reward(value=reward),
+        "state": state,
+        "reward": reward,
         "done": done,
         "error": error,
     }
