@@ -1,123 +1,149 @@
-from typing import Any, Dict
+"""Hard task grading for classification + response + resolution quality."""
+
+from typing import Any, Dict, List
 
 
 TASK_NAME = "hard"
-DESCRIPTION = "Full resolution scoring with classification, response, and resolution correctness."
+DESCRIPTION = "Classification (40%) + response (40%) + resolution (20%)."
+
+HARD_SCENARIOS: List[Dict[str, Any]] = [
+    {
+        "query": "Item arrived broken and I need a refund immediately.",
+        "expected_issue_type": "refund",
+        "required_keywords": ["refund", "policy", "processed"],
+        "valid_resolutions": ["refund_processed", "send_replacement"],
+    },
+    {
+        "query": "Shipment is delayed and tracking has not changed for days.",
+        "expected_issue_type": "delivery",
+        "required_keywords": ["delivery", "tracking", "update"],
+        "valid_resolutions": ["delivery_escalated", "priority_dispatch"],
+    },
+    {
+        "query": "Payment failed but amount was deducted from my account.",
+        "expected_issue_type": "payment",
+        "required_keywords": ["payment", "verify", "charge"],
+        "valid_resolutions": ["payment_reconciled", "refund_processed"],
+    },
+    {
+        "query": "I want to return this and get my money back quickly.",
+        "expected_issue_type": "refund",
+        "required_keywords": ["return", "refund", "policy"],
+        "valid_resolutions": ["refund_processed", "return_pickup_scheduled"],
+    },
+]
 
 
-VALID_ISSUES = {"refund", "delivery", "payment"}
-EXPECTED_RESPONSES = {"refund_policy", "delivery_update", "payment_verification"}
-EXPECTED_RESOLUTIONS = {"refund_processed", "delivery_escalated", "payment_reconciled"}
-PARTIAL_RESPONSE_TOKENS = (
-    "refund",
-    "policy",
-    "return",
-    "delivery",
-    "delay",
-    "tracking",
-    "payment",
-    "verify",
-    "charge",
-)
-PARTIAL_RESOLUTION_TOKENS = (
-    "refund",
-    "processed",
-    "request",
-    "delivery",
-    "escalate",
-    "investigate",
-    "payment",
-    "reconcile",
-    "verify",
-)
+def _normalize_issue(value: Any) -> str:
+    """Normalize issue labels for comparison."""
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().lower()
+    if text in {"return", "returns", "money_back"}:
+        return "refund"
+    return text
 
 
-def _fallback_flags(episode: Dict[str, Any]) -> Dict[str, bool]:
-    steps = episode.get("steps", [])
-    if not isinstance(steps, list):
-        steps = []
-
-    classification_value = ""
-    response_value = ""
-    resolution_value = ""
-
-    if len(steps) > 0 and isinstance(steps[0], dict):
-        action = steps[0].get("action", {})
-        if isinstance(action, dict):
-            value = action.get("issue_type") or action.get("classification")
-            if isinstance(value, str):
-                classification_value = value.strip().lower()
-
-    if len(steps) > 1 and isinstance(steps[1], dict):
-        action = steps[1].get("action", {})
-        if isinstance(action, dict):
-            value = action.get("response")
-            if isinstance(value, str):
-                response_value = value.strip().lower()
-
-    if len(steps) > 2 and isinstance(steps[2], dict):
-        action = steps[2].get("action", {})
-        if isinstance(action, dict):
-            value = action.get("resolution")
-            if isinstance(value, str):
-                resolution_value = value.strip().lower()
-
-    expected = episode.get("expected_issue_type")
-    expected_issue = str(expected).strip().lower() if expected else ""
-    related = episode.get("related_issue_types", [])
-    related_set = {str(x).strip().lower() for x in related if isinstance(x, str)}
-
-    classification_correct = (
-        isinstance(classification_value, str)
-        and bool(expected_issue)
-        and classification_value == expected_issue
-    )
-    classification_partial = (
-        isinstance(classification_value, str)
-        and classification_value in related_set
-    )
-
-    return {
-        "classification_correct": classification_correct,
-        "classification_partial": classification_partial,
-        "response_correct": response_value in EXPECTED_RESPONSES,
-        "response_partial": any(token in response_value for token in PARTIAL_RESPONSE_TOKENS),
-        "resolution_correct": resolution_value in EXPECTED_RESOLUTIONS,
-        "resolution_partial": any(token in resolution_value for token in PARTIAL_RESOLUTION_TOKENS),
-    }
+def _extract_action_field(actions_taken: List[Any], index: int, keys: List[str]) -> str:
+    """Extract field from indexed action safely."""
+    if not isinstance(actions_taken, list) or len(actions_taken) <= index:
+        return ""
+    action = actions_taken[index]
+    if not isinstance(action, dict):
+        return ""
+    for key in keys:
+        value = action.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    return ""
 
 
-def grader(episode: Dict[str, Any]) -> float:
-    flags = _fallback_flags(episode)
-
-    classification_correct = bool(episode.get("classification_correct", flags["classification_correct"]))
-    classification_partial = bool(episode.get("classification_partial", flags["classification_partial"]))
-    response_correct = bool(episode.get("response_correct", flags["response_correct"]))
-    response_partial = bool(episode.get("response_partial", flags["response_partial"]))
-    resolution_correct = bool(episode.get("resolution_correct", flags["resolution_correct"]))
-    resolution_partial = bool(episode.get("resolution_partial", flags["resolution_partial"]))
-
-    score_value = 0.0
-    if classification_correct:
-        score_value += 0.4
-    elif classification_partial:
-        score_value += 0.2
-    if response_correct:
-        score_value += 0.4
-    elif response_partial:
-        score_value += 0.2
-    if resolution_correct:
-        score_value += 0.2
-    elif resolution_partial:
-        score_value += 0.1
-
-    # Bound score to [0.0, 1.0] and return a stable rounded value.
-    return max(0.0, min(1.0, round(score_value, 4)))
+def _classification_score(predicted: str, expected: str) -> float:
+    """Compute classification score out of 0.4."""
+    if not predicted or not expected:
+        return 0.0
+    if predicted == expected:
+        return 0.4
+    if {predicted, expected} == {"refund", "return"}:
+        return 0.2
+    return 0.0
 
 
-def grader(episode: Dict[str, Any]) -> float:
-    return grade(episode)
+def _response_score(response_text: str, required_keywords: List[Any]) -> float:
+    """Compute response score out of 0.4 by keyword coverage."""
+    if not response_text or not isinstance(required_keywords, list):
+        return 0.0
+
+    keywords = [str(k).strip().lower() for k in required_keywords if str(k).strip()]
+    if not keywords:
+        return 0.0
+
+    matches = sum(1 for kw in keywords if kw in response_text)
+    raw = (matches / len(keywords)) * 0.4
+    return float(max(0.0, min(0.4, raw)))
 
 
-def score(episode: Dict[str, Any]) -> float:
-    return grade(episode)
+def _resolution_score(resolution_text: str, valid_resolutions: List[Any]) -> float:
+    """Compute resolution score out of 0.2 with partial attempt credit."""
+    if not resolution_text:
+        return 0.0
+    if not isinstance(valid_resolutions, list):
+        return 0.0
+
+    valid = [str(v).strip().lower() for v in valid_resolutions if str(v).strip()]
+    if not valid:
+        return 0.0
+
+    if resolution_text in valid:
+        return 0.2
+
+    # Partial attempt: shares a token with any valid resolution.
+    resolution_tokens = set(token for token in resolution_text.replace("-", "_").split("_") if token)
+    for candidate in valid:
+        candidate_tokens = set(token for token in candidate.replace("-", "_").split("_") if token)
+        if resolution_tokens.intersection(candidate_tokens):
+            return 0.05
+    return 0.0
+
+
+def grade(actions_taken: list, scenario_data: dict) -> float:
+    """Grade hard task actions.
+
+    Args:
+        actions_taken: List of action dictionaries from the agent.
+        scenario_data: Scenario metadata containing expected label, keywords,
+            and valid resolutions.
+
+    Returns:
+        Float score in [0.0, 1.0].
+    """
+    try:
+        actions: List[Any] = actions_taken if isinstance(actions_taken, list) else []
+        scenario: Dict[str, Any] = scenario_data if isinstance(scenario_data, dict) else {}
+
+        predicted_issue = _normalize_issue(_extract_action_field(actions, 0, ["issue_type", "classification"]))
+        expected_issue = _normalize_issue(scenario.get("expected_issue_type"))
+        response_text = _extract_action_field(actions, 1, ["response", "message", "text"])
+        resolution_text = _extract_action_field(actions, 2, ["resolution", "action", "next_step"])
+
+        required_keywords = scenario.get("required_keywords", [])
+        valid_resolutions = scenario.get("valid_resolutions", [])
+
+        class_part = _classification_score(predicted_issue, expected_issue)
+        response_part = _response_score(response_text, required_keywords)
+        resolution_part = _resolution_score(resolution_text, valid_resolutions)
+
+        total_score = class_part + response_part + resolution_part
+        return float(max(0.0, min(1.0, total_score)))
+    except Exception:
+        return 0.0
+
+
+def grader(actions_taken: list, scenario_data: dict) -> float:
+    """Compatibility alias for systems expecting grader()."""
+    return grade(actions_taken, scenario_data)
+
+
+def score(actions_taken: list, scenario_data: dict) -> float:
+    """Compatibility alias for systems expecting score()."""
+    return grade(actions_taken, scenario_data)
