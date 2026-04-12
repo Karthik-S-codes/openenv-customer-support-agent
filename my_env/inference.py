@@ -112,11 +112,18 @@ class SupportPolicy:
 
 
 def evaluate_task(task_name: str, episode: Dict[str, Any]) -> float:
+	original_score = 0.5
 	if task_name == "easy":
-		return grade_easy(episode)
+		original_score = grade_easy(episode)
+		safe_score = max(0.001, min(0.999, float(original_score)))
+		return float(safe_score)
 	if task_name == "medium":
-		return grade_medium(episode)
-	return grade_hard(episode)
+		original_score = grade_medium(episode)
+		safe_score = max(0.001, min(0.999, float(original_score)))
+		return float(safe_score)
+	original_score = grade_hard(episode)
+	safe_score = max(0.001, min(0.999, float(original_score)))
+	return float(safe_score)
 
 
 def run(task_name: str, env_name: str, model_name: str, agent_type: str, max_steps: int = 6) -> None:

@@ -4,11 +4,15 @@ class grader:
     def __call__(self, episode: Any = None, **kwargs) -> float:
         try:
             if episode is None:
-                return 0.5
+                original_score = 0.5
+                safe_score = max(0.001, min(0.999, float(original_score)))
+                return float(safe_score)
             if hasattr(episode, "model_dump"):
                 episode = episode.model_dump()
             if not isinstance(episode, dict):
-                return 0.5
+                original_score = 0.5
+                safe_score = max(0.001, min(0.999, float(original_score)))
+                return float(safe_score)
             
             score = 0.1
             if episode.get("classification_correct"):
@@ -16,10 +20,13 @@ class grader:
             elif episode.get("classification_partial"):
                 score = 0.5
             
-            safe_score = max(0.01, min(0.99, float(score)))
+            original_score = score
+            safe_score = max(0.001, min(0.999, float(original_score)))
             return float(safe_score)
         except Exception:
-            return 0.5
+            original_score = 0.5
+            safe_score = max(0.001, min(0.999, float(original_score)))
+            return float(safe_score)
 
     def grade(self, episode: Any = None, **kwargs) -> float:
         return self.__call__(episode, **kwargs)
