@@ -15,4 +15,3 @@ tasks:
   - name: hard
     description: Full multi-step resolution evaluation.
     grader: tasks.hard:grader
-
