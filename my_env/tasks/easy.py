@@ -34,13 +34,6 @@ def _infer_classification_correct(episode: Dict[str, Any]) -> bool:
 
 def grader(episode: Dict[str, Any]) -> float:
     classification_correct = _infer_classification_correct(episode)
-    score_value = 1.0 if classification_correct else 0.0
-    return max(0.0, min(1.0, float(score_value)))
-
-
-def grader(episode: Dict[str, Any]) -> float:
-    return grade(episode)
-
-
-def score(episode: Dict[str, Any]) -> float:
-    return grade(episode)
+    score_value = 0.95 if classification_correct else 0.05
+    final_score = float(score_value)
+    return min(0.95, max(0.05, final_score))

@@ -83,12 +83,5 @@ def grader(episode: Dict[str, Any]) -> float:
     elif response_partial:
         score_value += 0.25
 
-    return max(0.0, min(1.0, float(score_value)))
-
-
-def grader(episode: Dict[str, Any]) -> float:
-    return grade(episode)
-
-
-def score(episode: Dict[str, Any]) -> float:
-    return grade(episode)
+    final_score = float(score_value)
+    return min(0.95, max(0.05, final_score))

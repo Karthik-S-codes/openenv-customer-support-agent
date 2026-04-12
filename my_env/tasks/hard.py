@@ -111,13 +111,5 @@ def grader(episode: Dict[str, Any]) -> float:
     elif resolution_partial:
         score_value += 0.1
 
-    # Bound score to [0.0, 1.0] and return a stable rounded value.
-    return max(0.0, min(1.0, round(score_value, 4)))
-
-
-def grader(episode: Dict[str, Any]) -> float:
-    return grade(episode)
-
-
-def score(episode: Dict[str, Any]) -> float:
-    return grade(episode)
+    final_score = float(score_value)
+    return min(0.95, max(0.05, final_score))
