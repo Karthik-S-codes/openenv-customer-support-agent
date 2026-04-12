@@ -6,12 +6,9 @@ entrypoint:
 inference:
   path: inference.py
 tasks:
-  - name: easy
-    description: Classification-only evaluation.
-    grader: tasks.easy:grader
-  - name: medium
-    description: Classification and response quality evaluation.
-    grader: tasks.medium:grader
-  - name: hard
-    description: Full multi-step resolution evaluation.
-    grader: tasks.hard:grader
+  - id: task_easy
+    grader: tasks.easy:safe_grader
+  - id: task_medium
+    grader: tasks.medium:safe_grader
+  - id: task_hard
+    grader: tasks.hard:safe_grader
