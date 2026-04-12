@@ -24,7 +24,7 @@ class grader:
                 score += 0.1
             if episode.get("bonus_awarded"):
                 score += 0.05
-            return float(min(0.85, max(0.1, round(score, 2))))
+            return max(0.01, min(0.99, float(score)))
         except Exception:
             return 0.5
 
