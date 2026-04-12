@@ -7,8 +7,8 @@ inference:
   path: inference.py
 tasks:
   - id: task_easy
-    grader: tasks.easy:safe_grader
+    grader: tasks.common:safe_grader
   - id: task_medium
-    grader: tasks.medium:safe_grader
+    grader: tasks.common:safe_grader
   - id: task_hard
-    grader: tasks.hard:safe_grader
+    grader: tasks.common:safe_grader

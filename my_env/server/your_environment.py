@@ -1,3 +1,4 @@
+import random
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -6,16 +7,12 @@ class CustomerSupportEnvironment:
 
     def __init__(self, seed: Optional[int] = None) -> None:
         self.seed = seed
+        self._rng = random.Random(seed)
         self.tasks = ["task_easy", "task_medium", "task_hard"]
-        self._task_index = -1
-        self.current_task = "task_easy"
+        self.current_task = self.tasks[0]
         self.done = False
         self.step_count = 0
         self._last_action: Any = None
-
-    def _next_task(self) -> str:
-        self._task_index = (self._task_index + 1) % len(self.tasks)
-        return self.tasks[self._task_index]
 
     def _clamp_reward(self, score: float) -> float:
         score = max(0.01, min(float(score), 0.99))
@@ -23,7 +20,7 @@ class CustomerSupportEnvironment:
 
     def reset(self, issue_type: Optional[str] = None) -> Dict[str, Any]:
         _ = issue_type
-        self.current_task = self._next_task()
+        self.current_task = self._rng.choice(self.tasks)
         self.done = False
         self.step_count = 0
         self._last_action = None
