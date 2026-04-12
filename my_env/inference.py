@@ -1,202 +1,197 @@
-"""HTTP-based baseline inference runner for OpenEnv customer support.
-
-This script intentionally avoids importing any `tasks.*` modules so it cannot
-fail due to grader import mismatches during validation.
-"""
-
+import argparse
 import json
 import os
-import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import requests
+from openai import OpenAI
+
+from server.your_environment import CustomerSupportEnvironment
+from tasks.easy import grade as grade_easy
+from tasks.hard import grade as grade_hard
+from tasks.medium import grade as grade_medium
 
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
-MODEL_NAME = os.getenv("MODEL_NAME", "rule_based_baseline")
+# Mandatory hackathon variables (LOCAL_IMAGE_NAME kept for spec compatibility).
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-DEFAULT_MAX_STEPS = 6
-TASKS = ("easy", "medium", "hard")
+
+def _bool_text(value: bool) -> str:
+	return "true" if value else "false"
 
 
-def _log(tag: str, message: str) -> None:
-	"""Print standardized log messages."""
-	print(f"[{tag}] {message}")
+def log_start(task: str, env: str, model: str) -> None:
+	print(f"[START] task={task} env={env} model={model}")
 
 
-def _headers() -> Dict[str, str]:
-	"""Build HTTP headers, optionally including bearer auth."""
-	headers = {"Content-Type": "application/json"}
-	if HF_TOKEN:
-		headers["Authorization"] = f"Bearer {HF_TOKEN}"
-	return headers
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+	reward_text = f"{reward:.2f}"
+	done_text = _bool_text(done)
+	error_text = "null" if error is None else str(error)
+	print(
+		f"[STEP] step={step} action={action} reward={reward_text} "
+		f"done={done_text} error={error_text}"
+	)
 
 
-def _extract_state(payload: Any) -> Dict[str, Any]:
-	"""Normalize API responses that may wrap state in different shapes."""
-	if isinstance(payload, dict) and isinstance(payload.get("state"), dict):
-		return payload["state"]
-	if isinstance(payload, dict):
-		return payload
-	return {}
+def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+	rewards_text = ",".join(f"{r:.2f}" for r in rewards)
+	print(f"[END] success={_bool_text(success)} steps={steps} rewards={rewards_text}")
 
 
-def _post_reset(issue_type: Optional[str] = None, timeout: int = 20) -> Dict[str, Any]:
-	"""Call /reset endpoint with schema fallbacks for broad compatibility."""
-	url = f"{API_BASE_URL}/reset"
-	candidate_payloads: List[Any] = []
-	if issue_type:
-		candidate_payloads.append({"issue_type": issue_type})
-		candidate_payloads.append(issue_type)
-	candidate_payloads.append(None)
+class SupportPolicy:
+	def __init__(self, model_name: Optional[str], agent_type: str = "openai") -> None:
+		self.agent_type = agent_type
+		self.model_name = model_name or MODEL_NAME
+		self.client: Optional[OpenAI] = None
 
-	last_error: Optional[Exception] = None
-	for payload in candidate_payloads:
+		# Per hackathon requirement: use OpenAI client for model calls.
+		if agent_type == "openai":
+			if HF_TOKEN:
+				self.client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+			elif os.getenv("OPENAI_API_KEY"):
+				self.client = OpenAI()
+
+	def _fallback_action(self, state: Dict[str, Any]) -> Dict[str, str]:
+		phase = state.get("phase")
+
+		if phase == "classify_issue":
+			return {"issue_type": "refund"}
+		if phase == "generate_response":
+			return {"response": "refund_policy"}
+		return {"resolution": "refund_processed"}
+
+	def _model_action(self, state: Dict[str, Any]) -> Dict[str, str]:
+		if not self.client:
+			return self._fallback_action(state)
+
+		phase = state.get("phase")
+		prompt = {
+			"phase": phase,
+			"customer_query": state.get("customer_query"),
+			"allowed_labels": {
+				"classify_issue": ["refund", "delivery", "payment"],
+				"generate_response": ["refund_policy", "delivery_update", "payment_verification"],
+				"resolve_issue": ["refund_processed", "delivery_escalated", "payment_reconciled"],
+			},
+			"output_rule": (
+				"Return only a JSON object with one key for the active phase: "
+				"issue_type OR response OR resolution."
+			),
+		}
+
 		try:
-			if payload is None:
-				response = requests.post(url, headers=_headers(), timeout=timeout)
-			else:
-				response = requests.post(url, headers=_headers(), data=json.dumps(payload), timeout=timeout)
-			response.raise_for_status()
-			return _extract_state(response.json())
-		except Exception as exc:
-			last_error = exc
+			completion = self.client.chat.completions.create(
+				model=self.model_name,
+				temperature=0,
+				max_tokens=64,
+				messages=[
+					{
+						"role": "system",
+						"content": "You are a strict policy model for a customer support environment.",
+					},
+					{"role": "user", "content": json.dumps(prompt)},
+				],
+				stream=False,
+			)
+			content = (completion.choices[0].message.content or "").strip()
+			parsed = json.loads(content) if content else {}
+			if isinstance(parsed, dict):
+				return parsed
+		except Exception:
+			pass
 
-	raise RuntimeError(f"reset_failed: {last_error}")
+		return self._fallback_action(state)
 
-
-def _post_step(action: Dict[str, Any], timeout: int = 20) -> Tuple[Dict[str, Any], float, bool, Optional[str]]:
-	"""Call /step endpoint and normalize response fields."""
-	url = f"{API_BASE_URL}/step"
-	response = requests.post(url, headers=_headers(), data=json.dumps({"action": action}), timeout=timeout)
-	response.raise_for_status()
-
-	payload = response.json()
-	state = _extract_state(payload)
-	reward_obj = payload.get("reward") if isinstance(payload, dict) else 0.0
-	done = bool(payload.get("done", False)) if isinstance(payload, dict) else False
-	error = payload.get("error") if isinstance(payload, dict) else None
-
-	reward_value = 0.0
-	if isinstance(reward_obj, dict):
-		reward_value = float(reward_obj.get("value", 0.0) or 0.0)
-	else:
-		reward_value = float(reward_obj or 0.0)
-
-	return state, reward_value, done, error
+	def action(self, state: Dict[str, Any]) -> Dict[str, str]:
+		if self.agent_type == "rule_based":
+			return self._fallback_action(state)
+		return self._model_action(state)
 
 
-def _infer_issue_type(customer_query: str) -> str:
-	"""Infer issue type from customer query text."""
-	text = (customer_query or "").lower()
-	if any(token in text for token in ("refund", "money back", "damaged", "broken", "return")):
-		return "refund"
-	if any(token in text for token in ("delivery", "delayed", "tracking", "shipment", "arrive")):
-		return "delivery"
-	return "payment"
+def evaluate_task(task_name: str, episode: Dict[str, Any]) -> float:
+	if task_name == "easy":
+		return grade_easy(episode)
+	if task_name == "medium":
+		return grade_medium(episode)
+	return grade_hard(episode)
 
 
-def _response_for_issue(issue_type: str) -> str:
-	"""Generate response label from issue type."""
-	mapping = {
-		"refund": "refund_policy",
-		"delivery": "delivery_update",
-		"payment": "payment_verification",
-	}
-	return mapping.get(issue_type, "payment_verification")
-
-
-def _resolution_for_issue(issue_type: str) -> str:
-	"""Generate resolution label from issue type."""
-	mapping = {
-		"refund": "refund_processed",
-		"delivery": "delivery_escalated",
-		"payment": "payment_reconciled",
-	}
-	return mapping.get(issue_type, "payment_reconciled")
-
-
-def _choose_action(state: Dict[str, Any], remembered_issue: Optional[str]) -> Tuple[Dict[str, str], Optional[str]]:
-	"""Choose the next action from the environment phase."""
-	phase = str(state.get("phase", "")).strip().lower()
-	query = str(state.get("customer_query", ""))
-	issue_type = remembered_issue or _infer_issue_type(query)
-
-	if phase == "classify_issue":
-		issue_type = _infer_issue_type(query)
-		return {"issue_type": issue_type}, issue_type
-	if phase == "generate_response":
-		return {"response": _response_for_issue(issue_type)}, issue_type
-	if phase == "resolve_issue":
-		return {"resolution": _resolution_for_issue(issue_type)}, issue_type
-
-	# Fallback to a safe classification action if phase is unknown.
-	return {"issue_type": issue_type}, issue_type
-
-
-def run_task(task_name: str, max_steps: int = DEFAULT_MAX_STEPS) -> bool:
-	"""Execute one task episode against the HTTP API."""
-	_log("START", f"task={task_name} base_url={API_BASE_URL} model={MODEL_NAME}")
+def run(task_name: str, env_name: str, model_name: str, agent_type: str, max_steps: int = 6) -> None:
+	env = CustomerSupportEnvironment()
+	policy = SupportPolicy(model_name=model_name, agent_type=agent_type)
 
 	rewards: List[float] = []
-	remembered_issue: Optional[str] = None
+	steps_taken = 0
+	success = False
+
+	log_start(task=task_name, env=env_name, model=model_name)
 
 	try:
-		state = _post_reset(issue_type=None)
-	except Exception as exc:
-		_log("ERROR", f"task={task_name} reset_failed={exc}")
-		_log("END", f"task={task_name} success=false steps=0 rewards=")
-		return False
+		state = env.reset()
+		if hasattr(state, "model_dump"):
+			state = state.model_dump()
 
-	done = bool(state.get("done", False))
-	step_count = 0
+		for step in range(1, max_steps + 1):
+			action_dict = policy.action(state)
+			action_text = json.dumps(action_dict, separators=(",", ":"))
 
-	while (not done) and step_count < max_steps:
-		step_count += 1
+			state, reward, done, error = env.step(action_dict)
+			if hasattr(state, "model_dump"):
+				state = state.model_dump()
+			if hasattr(reward, "value"):
+				reward = reward.value
+
+			rewards.append(float(reward) if not isinstance(reward, dict) else reward["value"])
+			steps_taken = step
+
+			log_step(step=step, action=action_text, reward=float(reward) if not isinstance(reward, dict) else reward["value"], done=bool(done), error=error)
+
+			if done:
+				break
 
 		try:
-			action, remembered_issue = _choose_action(state, remembered_issue)
-			state, reward, done, error = _post_step(action)
-			rewards.append(reward)
-			_log(
-				"STEP",
-				"step={} task={} action={} reward={:.2f} done={} error={}".format(
-					step_count,
-					task_name,
-					json.dumps(action, separators=(",", ":")),
-					reward,
-					str(done).lower(),
-					"null" if error is None else error,
-				),
-			)
-		except requests.RequestException as exc:
-			_log("ERROR", f"task={task_name} network_error={exc}")
-			_log("END", f"task={task_name} success=false steps={step_count} rewards={','.join(f'{r:.2f}' for r in rewards)}")
-			return False
-		except Exception as exc:
-			_log("ERROR", f"task={task_name} runtime_error={exc}")
-			_log("END", f"task={task_name} success=false steps={step_count} rewards={','.join(f'{r:.2f}' for r in rewards)}")
-			return False
+			episode = env.episode_result()
+			task_score = evaluate_task(task_name, episode)
+			success = task_score >= (1.0 if task_name in ("easy", "medium") else 0.8)
+		except Exception as e:
+			print(f"[GRADE ERROR] {e}")
+			success = False
 
-	success = bool(done)
-	_log("END", f"task={task_name} success={str(success).lower()} steps={step_count} rewards={','.join(f'{r:.2f}' for r in rewards)}")
-	return success
+	except Exception as e:
+		print(f"[ERROR] {e}")
+		log_end(success=False, steps=0, rewards=[])
+		return
+	finally:
+		close_fn = getattr(env, "close", None)
+		if callable(close_fn):
+			try:
+				close_fn()
+			except Exception:
+				pass
+		# Avoid logging twice if except block exited early
+		if not ("e" in locals() and isinstance(e, Exception)):
+			log_end(success=success, steps=steps_taken, rewards=rewards)
 
 
-def main() -> int:
-	"""Run baseline inference across easy/medium/hard tasks."""
-	try:
-		task_results = [run_task(task) for task in TASKS]
-		if all(task_results):
-			_log("SUCCESS", "Inference completed successfully")
-			return 0
-		_log("ERROR", "Inference completed with failures")
-		return 1
-	except Exception as exc:
-		_log("ERROR", f"Unhandled exception: {exc}")
-		return 1
+def parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--task", default="hard", choices=["easy", "medium", "hard"])
+	parser.add_argument("--env", default="customer_support_agent")
+	parser.add_argument("--model", default=MODEL_NAME)
+	parser.add_argument("--agent", default="openai", choices=["openai", "rule_based"])
+	parser.add_argument("--max-steps", type=int, default=6)
+	return parser.parse_args()
 
 
 if __name__ == "__main__":
-	sys.exit(main())
+	args = parse_args()
+	run(
+		task_name=args.task,
+		env_name=args.env,
+		model_name=args.model,
+		agent_type=args.agent,
+		max_steps=args.max_steps,
+	)
