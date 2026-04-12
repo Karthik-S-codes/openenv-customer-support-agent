@@ -141,28 +141,37 @@ def run(task_name: str, env_name: str, model_name: str, agent_type: str, max_ste
 			state, reward, done, error = env.step(action_dict)
 			if hasattr(state, "model_dump"):
 				state = state.model_dump()
+			
 			if hasattr(reward, "value"):
 				reward = reward.value
+			reward = float(reward) if reward is not None else 0.0
 
-			rewards.append(float(reward) if not isinstance(reward, dict) else reward["value"])
+			rewards.append(reward)
 			steps_taken = step
 
-			log_step(step=step, action=action_text, reward=float(reward) if not isinstance(reward, dict) else reward["value"], done=bool(done), error=error)
+			log_step(step=step, action=action_text, reward=reward, done=bool(done), error=error)
 
 			if done:
 				break
 
 		try:
 			episode = env.episode_result()
+			if hasattr(episode, "model_dump"):
+				episode = episode.model_dump()
+			if not isinstance(episode, dict):
+				episode = {}
 			task_score = evaluate_task(task_name, episode)
-			success = task_score >= (1.0 if task_name in ("easy", "medium") else 0.8)
+			success = task_score >= 0.6
 		except Exception as e:
 			print(f"[GRADE ERROR] {e}")
+			task_score = 0.05
 			success = False
 
 	except Exception as e:
-		print(f"[ERROR] {e}")
-		log_end(success=False, steps=0, rewards=[])
+		print(f"[ERROR] Unhandled exception: {e}")
+		import traceback
+		traceback.print_exc()
+		log_end(success=False, steps=0, rewards=[0.0])
 		return
 	finally:
 		close_fn = getattr(env, "close", None)

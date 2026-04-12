@@ -65,23 +65,29 @@ def _fallback_flags(episode: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
-def grader(episode: Dict[str, Any]) -> float:
-    flags = _fallback_flags(episode)
+def grader(episode: dict) -> float:
+    try:
+        if not isinstance(episode, dict):
+            return 0.05
+        score = 0.0
+        classification_correct = episode.get("classification_correct", False)
+        classification_partial = episode.get("classification_partial", False)
+        response_correct = episode.get("response_correct", False)
+        response_partial = episode.get("response_partial", False)
 
-    classification_correct = bool(episode.get("classification_correct", flags["classification_correct"]))
-    classification_partial = bool(episode.get("classification_partial", flags["classification_partial"]))
-    response_correct = bool(episode.get("response_correct", flags["response_correct"]))
-    response_partial = bool(episode.get("response_partial", flags["response_partial"]))
+        if classification_correct:
+            score += 0.5
+        elif classification_partial:
+            score += 0.25
 
-    score_value = 0.0
-    if classification_correct:
-        score_value += 0.5
-    elif classification_partial:
-        score_value += 0.25
-    if response_correct:
-        score_value += 0.5
-    elif response_partial:
-        score_value += 0.25
+        if response_correct:
+            score += 0.45
+        elif response_partial:
+            score += 0.2
 
-    final_score = float(score_value)
-    return min(0.95, max(0.05, final_score))
+        # Clamp strictly between 0 and 1
+        return min(0.95, max(0.05, round(score, 4)))
+    except Exception:
+        return 0.05
+
+grade = grader

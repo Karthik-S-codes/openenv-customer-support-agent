@@ -32,8 +32,20 @@ def _infer_classification_correct(episode: Dict[str, Any]) -> bool:
     return isinstance(value, str) and value.strip().lower() in VALID_ISSUES
 
 
-def grader(episode: Dict[str, Any]) -> float:
-    classification_correct = _infer_classification_correct(episode)
-    score_value = 0.95 if classification_correct else 0.05
-    final_score = float(score_value)
-    return min(0.95, max(0.05, final_score))
+def grader(episode: dict) -> float:
+    try:
+        if not isinstance(episode, dict):
+            return 0.05
+        classification_correct = episode.get("classification_correct", False)
+        classification_partial = episode.get("classification_partial", False)
+        if classification_correct:
+            return 0.95
+        elif classification_partial:
+            return 0.5
+        else:
+            return 0.05
+    except Exception:
+        return 0.05
+
+# Keep the old grade name as alias so nothing else breaks
+grade = grader

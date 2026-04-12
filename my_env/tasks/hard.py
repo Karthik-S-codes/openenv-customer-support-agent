@@ -87,29 +87,40 @@ def _fallback_flags(episode: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
-def grader(episode: Dict[str, Any]) -> float:
-    flags = _fallback_flags(episode)
+def grader(episode: dict) -> float:
+    try:
+        if not isinstance(episode, dict):
+            return 0.05
+        score = 0.0
+        classification_correct = episode.get("classification_correct", False)
+        classification_partial = episode.get("classification_partial", False)
+        response_correct = episode.get("response_correct", False)
+        response_partial = episode.get("response_partial", False)
+        resolution_correct = episode.get("resolution_correct", False)
+        resolution_partial = episode.get("resolution_partial", False)
+        bonus = episode.get("bonus_awarded", False)
 
-    classification_correct = bool(episode.get("classification_correct", flags["classification_correct"]))
-    classification_partial = bool(episode.get("classification_partial", flags["classification_partial"]))
-    response_correct = bool(episode.get("response_correct", flags["response_correct"]))
-    response_partial = bool(episode.get("response_partial", flags["response_partial"]))
-    resolution_correct = bool(episode.get("resolution_correct", flags["resolution_correct"]))
-    resolution_partial = bool(episode.get("resolution_partial", flags["resolution_partial"]))
+        if classification_correct:
+            score += 0.35
+        elif classification_partial:
+            score += 0.15
 
-    score_value = 0.0
-    if classification_correct:
-        score_value += 0.4
-    elif classification_partial:
-        score_value += 0.2
-    if response_correct:
-        score_value += 0.4
-    elif response_partial:
-        score_value += 0.2
-    if resolution_correct:
-        score_value += 0.2
-    elif resolution_partial:
-        score_value += 0.1
+        if response_correct:
+            score += 0.35
+        elif response_partial:
+            score += 0.15
 
-    final_score = float(score_value)
-    return min(0.95, max(0.05, final_score))
+        if resolution_correct:
+            score += 0.2
+        elif resolution_partial:
+            score += 0.1
+
+        if bonus:
+            score += 0.05
+
+        # Clamp strictly between 0 and 1
+        return min(0.95, max(0.05, round(score, 4)))
+    except Exception:
+        return 0.05
+
+grade = grader
