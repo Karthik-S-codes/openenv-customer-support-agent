@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 
 from server.your_environment import CustomerSupportEnvironment
-from tasks.easy import grade as grade_easy
-from tasks.hard import grade as grade_hard
-from tasks.medium import grade as grade_medium
+from tasks.easy import grader as grade_easy
+from tasks.hard import grader as grade_hard
+from tasks.medium import grader as grade_medium
 
 
 # Mandatory hackathon variables (LOCAL_IMAGE_NAME kept for spec compatibility).
